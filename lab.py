@@ -195,10 +195,27 @@ def parse(tokens):
 # Built-in Functions #
 ######################
 
+def multiply(args):
+    def func(args=args):
+        result = 1
+        for num in args:
+            result *= num
+        return result
+    return func(args)
+
+def division(args):
+    def func(args=args):
+        result = args[0]
+        for num in args[1:]:
+            result /= num
+        return result
+    return func(args)
 
 scheme_builtins = {
     "+": sum,
     "-": lambda args: -args[0] if len(args) == 1 else (args[0] - sum(args[1:])),
+    "*": multiply,
+    "/": division,
 }
 
 
@@ -216,7 +233,32 @@ def evaluate(tree):
         tree (type varies): a fully parsed expression, as the output from the
                             parse function
     """
-    raise NotImplementedError
+    # If the expression is a list (representing an S-expression), each of the elements in the 
+    # list should be evaluated, and the result of evaluating the first element (a function) 
+    # should be called with the remaining elements passed in as arguments2. The overall 
+    # result of evaluating such a function is the return value of that function call.
+    if isinstance(tree, list):
+        #Evaluate the function
+        first_element = evaluate(tree[0])
+        #If first_element is a callable function
+        if callable(first_element):
+            #Evaluate each other element
+            args = [evaluate(arg) for arg in tree[1:]]
+            #Pass the evaluated elements into function and return
+            return first_element(args)
+        #The first element must have not been a valid function
+        raise SchemeEvaluationError
+        
+
+    #If the expression is a symbol representing a name in scheme_builtins, 
+    #it should return the associated object.
+    elif tree in scheme_builtins:
+        #Return the object itself
+        return scheme_builtins[tree]
+    
+    #If the expression is a number, it should return that number.
+    elif isinstance(tree, (int, float)):
+        return tree
 
 
 ########
@@ -265,29 +307,10 @@ if __name__ == "__main__":
 
     # uncommenting the following line will run doctests from above
     # doctest.testmod()
-
     #repl()
-    args = [
-        "bare-name",
-        "6.28",
-        "(spam)",
-        "(john paul george ringo)",
-        "(adam adam chris duane))",
-        "((missing-paren",
-        ")(spam)(",
-        "spam ; (",
-        "(numbers 3.14 3 -2 -2.4)",
-        "(multi\nline\nstatement)",
-        "(with comments) ; comment test",
-        "(multiline ; with comments\n statement) ; with comments",
-        "(weird          white\n                 space)",
-        "(w3!|]\\d5y8[]1$)",
-        "(nested (expressions (test) (is here) ((((now))))))",
-        "define x 3"
-        ]
-    args2 = "bare-name"
-    # args = [tokenize(exp) for exp in args ]
-    # print(args)
-    s = parse(tokenize("define x 3"))
-    # print(parse(['(', '+', '2', '(', '-', '5', '3', ')', '7', '8', ')']))
-    print(s)
+    #print(scheme_builtins['+']([1, 2, 3]))
+    print(evaluate([
+    "*",
+    7,
+    8
+  ]))
