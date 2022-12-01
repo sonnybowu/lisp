@@ -228,7 +228,7 @@ class Frame():
         else:
             return self.parent.lookup_var(var_name)
 
-    def set_var(self, var_name,expression):
+    def set_var(self, var_name, expression):
         #If variable exists within this frames bindings, bind it to val
         if var_name in self.bindings:
             #Assign it
@@ -240,7 +240,13 @@ class Frame():
             raise SchemeNameError
         #Recursively check the next parent frame for the variable
         else:
-            return self.parent.lookup_var(var_name)
+            return self.parent.set_var(var_name, expression)
+
+    #Delete variable
+    def delete_var(self, var):
+        if var in self.bindings:
+            return self.bindings.pop(var)
+        raise SchemeNameError
 
 class Pair():
     def __init__(self, car, cdr):
@@ -252,6 +258,12 @@ class Pair():
 
     def get_cdr(self):
         return self.cdr
+
+    def set_car(self, val):
+        self.car = val
+
+    def set_cdr(self, val):
+        self.cdr = val
 
 
 ######################
@@ -359,6 +371,16 @@ def is_list(args):
         return True
     return False
 
+def len_helper(args):
+    #Start at the beginning of list
+    temp = args[0]
+    count = 0
+    #Iterate through list until we get to the end and return count
+    while temp:
+        count += 1
+        temp = temp.get_cdr()
+    return count
+
 #should take a list as argument and should return the length of that list. When called on any object that is not a linked list, it should raise a SchemeEvaluationError.
 def list_len(args):
     # if empty list, return 0
@@ -367,62 +389,58 @@ def list_len(args):
     # if not a linked list
     if not is_list([args[0]]):
         raise SchemeEvaluationError
-    len = 1
-    #iterate through linked list until None is reached return len
-    s = args[0]
-    while s.get_cdr() != None:
-        len += 1
-        s = s.get_cdr()
-    return len
+    return len_helper(args)
 
 def index(args):
     """
     Returns the item at index i given a linked list
     """
-    # separate arguments: the linked list and index i
-    clist, i = args
-    # if linked list empty, raise an exception
-    if clist == None:
-        raise SchemeEvaluationError
-    # if a solo pair and index equal 0, return the pairs head
-    elif not is_list([clist]) and isinstance(clist, Pair):
-        if i == 0:
-            return clist.get_car()
-        # otherwise, raise exception
-        raise SchemeEvaluationError
-    # iteratively traverse linked list until we reach index i
-    curr_item = clist
-    for curr_i in range(1, i+1):
-        curr_item = curr_item.get_cdr()
-        # have reached end of linked list
-        if curr_item == None:
-            raise SchemeEvaluationError
-    # return item at index i
-    return curr_item.get_car()
+    # separate args into list and index
+    list, idx = args
+    #Get the head car
+    curr = list
+    #current index
+    curr_idx = 0
+    #Iterate through until wanted index is reached
+    while isinstance(curr, Pair):
+        if curr_idx == idx:
+            return curr.get_car()
+        curr_idx += 1
+        curr = curr.get_cdr()
+    #If we get here then error
+    raise SchemeEvaluationError
 
 #create new copy of list
 def get_copy_list(args):
-    if type(args) != Pair:
+    if args == None:
+        return None
+    # if not a list rais an error
+    elif not isinstance(args, Pair):
         raise SchemeEvaluationError
-    elif args.get_car() == None: 
-        return Pair(args.get_car(), args.get_cdr())
+    # recursively create copy
+    elif args.get_cdr() == None:
+        return Pair(args.get_car(), None)
     return Pair(args.get_car(), get_copy_list(args.get_cdr()))
 
 def append(args):
-    copy_args = []
+    #Create copy of list
+    copy = []
     for element in args:
         if element != None:
-            copy_args.append(get_copy_list(element))
-    if len(copy_args) == 0:
+            copy.append(get_copy_list(element))
+    #Check for empty
+    if copy == []:
         return None
-    elif len(copy_args) == 1:
-        return Pair(copy_args[0].car(), copy_args[0].cdr())
-    current = copy_args[0]
-    car = current
-    for element in copy_args[1:]:
-        while current.get_cdr() != None:
-            current = current.get_tail()
-        current.tail = element
+    #Just return copy if len 1
+    elif len(copy) == 1:
+        return Pair(copy[0].get_car(), copy[0].get_cdr()) 
+    #Iterate through and add lists together
+    curr = copy[0]
+    car = curr
+    for i in range(len(copy)-1):
+        while curr.get_cdr() != None:    
+            curr = curr.get_cdr()
+        curr.set_cdr(copy[i+1])
     return car
 
 def make_list(args):
@@ -440,7 +458,19 @@ def return_cdr(args):
     if len(args) == 1 and isinstance(args[0], Pair):
         return args[0].get_cdr()
     raise SchemeEvaluationError
-    
+
+def begin(args):
+    #Return last element
+    return args[-1]
+
+def evaluate_file(file_name, frame=None):
+    new_f = ""
+    f = open(file_name, 'r')
+    line = f.read().splitlines()
+    for exp in line:
+        new_f = new_f + exp + " "
+    return result_and_frame(parse(tokenize(new_f)), frame)[0]
+
 scheme_builtins = {
     "+": sum,
     "-": lambda args: -args[0] if len(args) == 1 else (args[0] - sum(args[1:])),
@@ -465,6 +495,7 @@ scheme_builtins = {
     "list": make_list,
     "car": return_car,
     "cdr": return_cdr,
+    "begin": begin,
 }
 
 
@@ -521,6 +552,8 @@ def evaluate(tree, frame=None):
             val = evaluate(expression, frame)
             frame.bindings[name] = val
             return val
+        elif tree[0] == 'del':
+            return frame.delete_var(tree[1])
         #Behavior for nil/empty list
         elif tree[0] == 'nil':
             return None
@@ -531,9 +564,20 @@ def evaluate(tree, frame=None):
             else:
                 return evaluate(tree[3], frame)
         #Behavior for defining functions with lambda
+        elif tree[0] == 'let':
+            new_bindings = {}
+            for binding in tree[1]:
+                evaluated = evaluate(binding[1], frame)
+                new_bindings[binding[0]] = evaluated
+            new_frame = Frame(frame)
+            new_frame.bindings = new_bindings
+            return evaluate(tree[2], new_frame)
         elif tree[0] == 'lambda':
             parameters, body = tree[1], tree[2]
             return Function(parameters, body, frame)
+        elif tree[0] == 'set!':
+            evaluated = evaluate(tree[2], frame)
+            return frame.set_var(tree[1], evaluate(tree[2], frame))
         #Otherwise, e is a compound expression representing a function call
         else:
             #Evaluate the function
@@ -641,7 +685,7 @@ if __name__ == "__main__":
 
     # uncommenting the following line will run doctests from above
     # doctest.testmod()
-    #repl()
-    s = tokenize('(append (list 9 8 7))')
-    z = parse(s)
-    print(evaluate(z))
+    repl()
+    # s = tokenize('(append (list 9 8 7))')
+    # z = parse(s)
+    # print(evaluate(z))
